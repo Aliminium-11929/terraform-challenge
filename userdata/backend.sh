@@ -1,18 +1,18 @@
 #!/bin/bash
-yum update -y
+dnf update -y
 
-# ─── Install Node.js 18 ───
-curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
-yum install -y nodejs
+# ─── Install Node.js 18 (AL2023 has it in its own repo) ─────────────────────────
+dnf install -y nodejs npm
 
-# ─── Create app directory ───
+# ─── Create app directory ────────────────────────────────────────────────────────
 mkdir -p /home/ec2-user/app
 cd /home/ec2-user/app
 
 npm init -y
 npm install express
 
-# ─── Create server.js ───
+# ─── Create server.js ────────────────────────────────────────────────────────────
+# ${full_name} is injected by Terraform's templatefile() at deploy time
 cat > server.js << 'APPEOF'
 const express = require("express");
 const { execSync } = require("child_process");
@@ -64,6 +64,5 @@ app.get("/api/data", (req, res) => {
 app.listen(PORT, () => console.log(`Backend API running on port $${PORT}`));
 APPEOF
 
-# ─── Run the server in the background ───
 chown -R ec2-user:ec2-user /home/ec2-user/app
 node /home/ec2-user/app/server.js &

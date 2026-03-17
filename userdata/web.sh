@@ -1,8 +1,8 @@
 #!/bin/bash
-yum update -y
-yum install -y nginx
+dnf update -y
+dnf install -y nginx
 
-# ─── Create the frontend HTML ───
+# ─── Create the frontend HTML ───────────────────────────────────────────────────
 cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
 <!DOCTYPE html>
 <html>
@@ -85,7 +85,9 @@ cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
 </html>
 HTMLEOF
 
-# ─── Configure Nginx reverse proxy to internal ALB ───
+# ─── Configure Nginx reverse proxy to internal ALB ──────────────────────────────
+# ${backend_url} is injected by Terraform's templatefile() — points to the
+# internal ALB DNS name so Nginx never talks to a single backend instance directly
 cat > /etc/nginx/conf.d/reverse-proxy.conf << NGINXEOF
 server {
     listen 80;
@@ -111,6 +113,5 @@ NGINXEOF
 rm -f /etc/nginx/conf.d/default.conf
 sed -i '/^\s*server\s*{/,/^\s*}/d' /etc/nginx/nginx.conf 2>/dev/null || true
 
-# Start Nginx
 systemctl start nginx
 systemctl enable nginx
