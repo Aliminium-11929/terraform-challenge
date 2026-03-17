@@ -31,20 +31,17 @@ cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
 </head>
 <body>
   <div class="container">
-    <h1>Two-Tier App &mdash; ${full_name}</h1>
+    <h1>Two-Tier App &mdash; FULL_NAME_PLACEHOLDER</h1>
     <p class="subtitle">Web Tier &rarr; Nginx Reverse Proxy &rarr; Internal ALB &rarr; Backend API</p>
-
     <div class="card">
       <h2>Backend Health Check</h2>
       <div id="health"><span class="loading">Checking backend...</span></div>
     </div>
-
     <div class="card">
       <h2>Backend Data</h2>
       <div id="data"><span class="loading">Fetching data...</span></div>
     </div>
   </div>
-
   <script>
     fetch("/api/health")
       .then(r => r.json())
@@ -85,33 +82,53 @@ cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
 </html>
 HTMLEOF
 
-# ─── Configure Nginx reverse proxy to internal ALB ──────────────────────────────
-# ${backend_url} is injected by Terraform's templatefile() — points to the
-# internal ALB DNS name so Nginx never talks to a single backend instance directly
-cat > /etc/nginx/conf.d/reverse-proxy.conf << NGINXEOF
-server {
-    listen 80;
-    server_name _;
+# ─── Inject full_name into the HTML (Terraform placeholder approach) ─────────────
+sed -i "s|FULL_NAME_PLACEHOLDER|${full_name}|g" /usr/share/nginx/html/index.html
 
-    root /usr/share/nginx/html;
-    index index.html;
+# ─── Overwrite nginx.conf with a clean minimal config ───────────────────────────
+# We overwrite entirely to avoid sed mangling the default AL2023 nginx.conf
+cat > /etc/nginx/nginx.conf << 'NGINXEOF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
 
-    location / {
-        try_files \$uri \$uri/ =404;
-    }
+events {
+    worker_connections 1024;
+}
 
-    location /api/ {
-        proxy_pass http://${backend_url}:80;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout 65;
+
+    server {
+        listen 80;
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location / {
+            try_files $uri $uri/ =404;
+        }
+
+        location /api/ {
+            proxy_pass http://BACKEND_URL_PLACEHOLDER:80;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
     }
 }
 NGINXEOF
 
-# Remove the default server block to avoid port 80 conflicts
-rm -f /etc/nginx/conf.d/default.conf
-sed -i '/^\s*server\s*{/,/^\s*}/d' /etc/nginx/nginx.conf 2>/dev/null || true
+# ─── Inject backend URL into nginx.conf ─────────────────────────────────────────
+sed -i "s|BACKEND_URL_PLACEHOLDER|${backend_url}|g" /etc/nginx/nginx.conf
+
+# ─── Remove conf.d files to avoid conflicts with our nginx.conf server block ────
+rm -f /etc/nginx/conf.d/*.conf
 
 systemctl start nginx
 systemctl enable nginx
