@@ -2,7 +2,7 @@
 yum update -y
 yum install -y nginx
 
-# ─── Create the frontend HTML ───────────────────────────────────────────────
+# ─── Create the frontend HTML ───
 cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
 <!DOCTYPE html>
 <html>
@@ -31,27 +31,30 @@ cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
 </head>
 <body>
   <div class="container">
-    <h1>Two-Tier App &mdash; ${your_name}</h1>
-    <p class="subtitle">Web Tier &rarr; Nginx Reverse Proxy &rarr; Backend API</p>
+    <h1>Two-Tier App &mdash; ${full_name}</h1>
+    <p class="subtitle">Web Tier &rarr; Nginx Reverse Proxy &rarr; Internal ALB &rarr; Backend API</p>
+
     <div class="card">
       <h2>Backend Health Check</h2>
       <div id="health"><span class="loading">Checking backend...</span></div>
     </div>
+
     <div class="card">
       <h2>Backend Data</h2>
       <div id="data"><span class="loading">Fetching data...</span></div>
     </div>
   </div>
+
   <script>
     fetch("/api/health")
       .then(r => r.json())
       .then(d => {
         document.getElementById("health").innerHTML = `
-          <span class="status healthy">${d.status}</span>
+          <span class="status healthy">$${d.status}</span>
           <div class="meta">
-            Instance: ${d.instanceId}<br>
-            AZ: ${d.availabilityZone}<br>
-            Time: ${d.timestamp}
+            Instance: $${d.instanceId}<br>
+            AZ: $${d.availabilityZone}<br>
+            Time: $${d.timestamp}
           </div>`;
       })
       .catch(() => {
@@ -63,14 +66,14 @@ cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
       .then(r => r.json())
       .then(d => {
         let rows = d.items.map(i =>
-          `<tr><td>${i.id}</td><td>${i.name}</td><td>${i.description}</td></tr>`
+          `<tr><td>$${i.id}</td><td>$${i.name}</td><td>$${i.description}</td></tr>`
         ).join("");
         document.getElementById("data").innerHTML = `
-          <p>${d.message}</p>
-          <div class="meta">Instance: ${d.instanceId} | AZ: ${d.availabilityZone}</div>
+          <p>$${d.message}</p>
+          <div class="meta">Instance: $${d.instanceId} | AZ: $${d.availabilityZone}</div>
           <table>
             <tr><th>ID</th><th>Name</th><th>Description</th></tr>
-            ${rows}
+            $${rows}
           </table>`;
       })
       .catch(() => {
@@ -82,7 +85,7 @@ cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
 </html>
 HTMLEOF
 
-# ─── Configure Nginx reverse proxy to Internal ALB ───────────────────────────
+# ─── Configure Nginx reverse proxy to internal ALB ───
 cat > /etc/nginx/conf.d/reverse-proxy.conf << NGINXEOF
 server {
     listen 80;
@@ -96,7 +99,7 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://${backend_dns}:3000;
+        proxy_pass http://${backend_url}:80;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -104,9 +107,10 @@ server {
 }
 NGINXEOF
 
-# Remove default server block to avoid conflicts
+# Remove the default server block to avoid port 80 conflicts
 rm -f /etc/nginx/conf.d/default.conf
 sed -i '/^\s*server\s*{/,/^\s*}/d' /etc/nginx/nginx.conf 2>/dev/null || true
 
+# Start Nginx
 systemctl start nginx
 systemctl enable nginx
